@@ -18,7 +18,8 @@ _C.INFANT_DATASET.VAL_ANNOTATIONS = './COCO2017/annotations2017/person_keypoints
 
 _C.TRAINING = CN()
 _C.TRAINING.DATASET = None
-_C.TRAINING.EPOCH = 3
+_C.TRAINING.EPOCH = 75
+_C.TRAINING.PRINT_FREQ = 20
 _C.TRAINING.LOG_FOLDER = './Results'
 _C.TRAINING.PRETRAINED_WEIGHT = './models/models_weight/mobilenet_sgd_68.848.pth.tar'
 _C.TRAINING.TRANSFER_WEIGHT = None
@@ -26,7 +27,9 @@ _C.TRAINING.TRANSFER_WEIGHT = None
 _C.TEMP = CN()
 _C.TEMP.PREPARED_DATA = './temp/prepared_data'
 
-
+_C.RESULTS_PATH = CN()
+_C.RESULTS_PATH.VGG19 = './Results/VGG19'
+_C.RESULTS_PATH.MOBILENET_V1 = './Results/MobileNet_v1'
 
 def get_cfg_defaults():
   """Get a yacs CfgNode object with default values for my_project."""
