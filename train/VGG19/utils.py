@@ -1,3 +1,6 @@
+import pandas as pd
+import os
+
 def build_names():
     names = []
 
@@ -22,3 +25,22 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+        
+
+def write_loss_csv(csv_path, total_loss, loss_states):
+    if os.path.exists(csv_path):
+        pass
+    else:
+        pd.DataFrame().to_csv(csv_path)
+        
+    df = pd.read_csv(csv_path)
+    columns = ["Total Loss", "Loss avg"]
+    value = total_loss
+    for name, val in loss_states.items():
+        columns.append(f"{name} value")
+        columns.append(f"{name} avg")
+        value.append(val.val)
+        value.append(val.avg)
+    loss_stages = pd.DataFrame([value], columns=columns)
+    df = pd.concat([df, pd.DataFrame(loss_stages)], axis=0, ignore_index=True)
+    df.to_csv(csv_path, index= False)

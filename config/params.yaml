@@ -6,6 +6,8 @@
 #               |---val2017
 
 COCO2017_DATASET:
+  DIR : 'F:/Data/COCO2017'
+  # DIR : '/media/sparc/Data/nqthinh/COCO2017
   TRAIN_ANNOTATIONS : '/media/sparc/Data/nqthinh/COCO2017/annotations/person_keypoints_train2017.json'
   VAL_ANNOTATIONS: '/media/sparc/Data/nqthinh/COCO2017/annotations/person_keypoints_val2017.json'
   TEST : '/media/sparc/Data/nqthinh/COCO2017/test2017'
@@ -22,6 +24,10 @@ INFANT_DATASET:
 TRAINING: 
   DATASET: 'COCO'
   EPOCH : 75
+  NUM_WORKER : 4
+  BATCH_SIZE : 16
+  PRINT_FREQ : 50
+  CHECKPOINT_FREQ : 20
   PRETRAINED_WEIGHT: './models/model_weights/mobilenet_sgd_68.848.pth.tar'
   TRANSFER_WEIGHT: None
 

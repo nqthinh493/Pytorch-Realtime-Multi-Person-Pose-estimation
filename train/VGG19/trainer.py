@@ -1,68 +1,23 @@
-import argparse
 import time
 import torch
-from datetime import datetime
-# from torch.utils.tensorboard import SummaryWriter
+import torch.backends.cudnn as cudnn
+
 
 import os, sys
 sys.path.append(os.getcwd())
-from utils import build_names, AverageMeter
+from utils import build_names, AverageMeter, write_loss_csv
 from loss import get_loss
 from lib.datasets import coco, transforms, datasets
 
-from modules.load_state import load_state, load_from_mobilenet
 from config import get_cfg_defaults, update_config
-from config.path_cfg import TRAIN_ANNO, VAL_ANNO, TRAIN_PATH, VAL_PATH
+from config.path_cfg import VGG19_RESULTS
 cfg = get_cfg_defaults()
 cfg = update_config(cfg, './config/params.yaml')
 
-
-DATA_DIR = '/media/sparc/Data/nqthinh/COCO2017'
-
-ANNOTATIONS_TRAIN = [os.path.join(DATA_DIR, 'annotations', item) for item in ['person_keypoints_train2017.json']]
-
-checkpoints_folder = os.path.join(cfg.RESULTS_PATH.VGG19, 'checkpoints', datetime.now().strftime("%Y%m%d-%H%M%S"))
-if not os.path.exists(checkpoints_folder):
-    os.makedirs(checkpoints_folder)
-    
-def save_checkpoint(net, optimizer, num_iter, epochId):
-    snapshot_name = '{}/checkpoint_iter_{}.pth'.format(checkpoints_folder, num_iter)
-    torch.save({'state_dict': net.module.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                # 'scheduler': scheduler.state_dict(),
-                'iter': num_iter,
-                'current_epoch': epochId},
-                snapshot_name)
-
-
-def train_cli(parser):
-    group = parser.add_argument_group('dataset and loader')
-    group.add_argument('--train-annotations', default=ANNOTATIONS_TRAIN)
-    group.add_argument('--train-image-dir', default=TRAIN_PATH)
-    group.add_argument('--val-annotations', default=VAL_ANNO)
-    group.add_argument('--val-image-dir', default=VAL_PATH)
-    group.add_argument('--pre-n-images', default=8000, type=int,
-                       help='number of images to sampe for pretraining')
-    group.add_argument('--n-images', default=None, type=int,
-                       help='number of images to sample')
-    group.add_argument('--duplicate-data', default=None, type=int,
-                       help='duplicate data')
-    group.add_argument('--loader-workers', default=4, type=int,
-                       help='number of workers for data loading')
-    group.add_argument('--batch-size', default=32, type=int,
-                       help='batch size')
-    group.add_argument('--lr', '--learning-rate', default=1., type=float,
-                    metavar='LR', help='initial learning rate')
-    group.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                    help='momentum')
-    group.add_argument('--weight-decay', '--wd', default=0.000, type=float,
-                    metavar='W', help='weight decay (default: 1e-4)') 
-    group.add_argument('--nesterov', dest='nesterov', default=True, type=bool)     
-    group.add_argument('--print_freq', default=1, type=int, metavar='N',
-                    help='number of iterations to print the training statistics')    
-                   
-                                         
+time_flag = cfg.RESULTS_PATH.TIME_FLAG
+                                      
 def train_factory(args, preprocess, target_transforms):
+    cudnn.benchmark = True
     train_datas = [datasets.CocoKeypoints(
         root=args.train_image_dir,
         annFile=item,
@@ -92,46 +47,6 @@ def train_factory(args, preprocess, target_transforms):
 
     return train_loader, val_loader, train_data, val_data
 
-def cli():
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    train_cli(parser)
-    parser.add_argument('-o', '--output', default=None,
-                        help='output file')
-    parser.add_argument('--stride-apply', default=1, type=int,
-                        help='apply and reset gradients every n batches')
-    parser.add_argument('--epochs', default=75, type=int,
-                        help='number of epochs to train')
-    parser.add_argument('--freeze-base', default=0, type=int,
-                        help='number of epochs to train with frozen base')
-    parser.add_argument('--pre-lr', type=float, default=1e-4,
-                        help='pre learning rate')
-    parser.add_argument('--update-batchnorm-runningstatistics',
-                        default=False, action='store_true',
-                        help='update batch norm running statistics')
-    parser.add_argument('--square-edge', default=368, type=int,
-                        help='square edge of input images')
-    parser.add_argument('--ema', default=1e-3, type=float,
-                        help='ema decay constant')
-    parser.add_argument('--debug-without-plots', default=False, action='store_true',
-                        help='enable debug but dont plot')
-    parser.add_argument('--disable-cuda', action='store_true',
-                        help='disable CUDA')                        
-    parser.add_argument('--model_path', default='./network/weight/', type=str, metavar='DIR',
-                    help='path to where the model saved')                         
-    args = parser.parse_args()
-
-    # add args.device
-    args.device = torch.device('cpu')
-    args.pin_memory = False
-    if not args.disable_cuda and torch.cuda.is_available():
-        args.device = torch.device('cuda')
-        args.pin_memory = True
-        
-    return args
-
 
 def train(train_loader, model, optimizer, epoch):
     batch_time = AverageMeter()
@@ -145,7 +60,7 @@ def train(train_loader, model, optimizer, epoch):
     meter_dict['min_ht'] = AverageMeter()    
     meter_dict['max_paf'] = AverageMeter()    
     meter_dict['min_paf'] = AverageMeter()
-
+    
     # switch to train mode
     model.train()
 
@@ -165,7 +80,6 @@ def train(train_loader, model, optimizer, epoch):
         _,saved_for_loss = model(img)
         
         total_loss, saved_for_log = get_loss(saved_for_loss, heatmap_target, paf_target)
-        
         for name,_ in meter_dict.items():
             meter_dict[name].update(saved_for_log[name], img.size(0))
         losses.update(total_loss, img.size(0))
@@ -178,22 +92,23 @@ def train(train_loader, model, optimizer, epoch):
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        if i % cfg.TRAINING.PRINT_FREQ == 0:
+        if i % cfg.PRINT_FREQ == 0:
+            
+            
             print_string = 'Epoch: [{0}][{1}/{2}]\t'.format(epoch, i, len(train_loader))
             print_string +='Data time {data_time.val:.3f} ({data_time.avg:.3f})\t'.format( data_time=data_time)
             print_string += 'Loss {loss.val:.4f} ({loss.avg:.4f})\n'.format(loss=losses)
-            for j, (name, value) in enumerate(meter_dict.items()):
-                
-                if j%2==1:
+            
+            for i, (name, value) in enumerate(meter_dict.items()):
+                if i%2==1:
                     print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\n'.format(name=name, loss=value)
                 else:
                     print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\t'.format(name=name, loss=value)
-                    
             print(print_string)
-
-        if i % cfg.TRAINING.CHECKPOINT_FREQ == 0:
-            save_checkpoint(model, optimizer, i, epoch)
-            
+ 
+            csv_path = VGG19_RESULTS['CSV_logs'] + '/train_{name}.csv'.format(name = time_flag)
+            total_loss = [losses.val.item(), losses.avg.item()]
+            write_loss_csv(csv_path, total_loss, meter_dict)
     return losses.avg  
         
         
