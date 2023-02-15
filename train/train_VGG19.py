@@ -1,12 +1,16 @@
 import argparse
 import time
+from datetime import datetime
 import os, sys
 sys.path.append(os.getcwd())
 import numpy as np
 from collections import OrderedDict
+import pandas as pd
 
 import torch
 import torch.nn as nn
+import torch.backends.cudnn as cudnn
+
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 
@@ -25,7 +29,7 @@ DATA_DIR = '/media/sparc/Data/nqthinh/COCO2017'
 
 ANNOTATIONS_TRAIN = [os.path.join(DATA_DIR, 'annotations', item) for item in ['person_keypoints_train2017.json']]
 
-
+time_flag = datetime.now().strftime("%Y%m%d-%H")
 
 def train_cli(parser):
     group = parser.add_argument_group('dataset and loader')
@@ -39,9 +43,9 @@ def train_cli(parser):
                        help='number of images to sample')
     group.add_argument('--duplicate-data', default=None, type=int,
                        help='duplicate data')
-    group.add_argument('--loader-workers', default=4, type=int,
+    group.add_argument('--loader-workers', default=6, type=int,
                        help='number of workers for data loading')
-    group.add_argument('--batch-size', default=32, type=int,
+    group.add_argument('--batch-size', default=24, type=int,
                        help='batch size')
     group.add_argument('--lr', '--learning-rate', default=1., type=float,
                     metavar='LR', help='initial learning rate')
@@ -50,11 +54,12 @@ def train_cli(parser):
     group.add_argument('--weight-decay', '--wd', default=0.000, type=float,
                     metavar='W', help='weight decay (default: 1e-4)') 
     group.add_argument('--nesterov', dest='nesterov', default=True, type=bool)     
-    group.add_argument('--print_freq', default=1, type=int, metavar='N',
+    group.add_argument('--print_freq', default=20, type=int, metavar='N',
                     help='number of iterations to print the training statistics')    
                    
                                          
 def train_factory(args, preprocess, target_transforms):
+    cudnn.benchmark = True
     train_datas = [datasets.CocoKeypoints(
         root=args.train_image_dir,
         annFile=item,
@@ -137,7 +142,24 @@ preprocess = transforms.Compose([
     ])
 train_loader, val_loader, train_data, val_data = train_factory(args, preprocess, target_transforms=None)
 
-
+def write_loss_csv(csv_path, loss, loss_states):
+    if os.path.exists(csv_path):
+        pass
+    else:
+        pd.DataFrame().to_csv(csv_path)
+        
+    df = pd.read_csv(csv_path)
+    columns = ["Total Loss", "Loss avg"]
+    value = [loss.val.item(), loss.avg.item()]
+    for name, val in loss_states.items():
+        columns.append(f"{name} value")
+        columns.append(f"{name} avg")
+        value.append(val.val)
+        value.append(val.avg)
+    loss_stages = pd.DataFrame([value], columns=columns)
+    df = pd.concat([df, pd.DataFrame(loss_stages)], axis=0, ignore_index=True)
+    df.to_csv(csv_path, index= False)
+    
 def build_names():
     names = []
 
@@ -171,10 +193,8 @@ def get_loss(saved_for_loss, heat_temp, vec_temp):
         saved_for_log[names[2 * j]] = loss1.item()
         saved_for_log[names[2 * j + 1]] = loss2.item()
 
-    saved_for_log['max_ht'] = torch.max(
-        saved_for_loss[-1].data[:, 0:-1, :, :]).item()
-    saved_for_log['min_ht'] = torch.min(
-        saved_for_loss[-1].data[:, 0:-1, :, :]).item()
+    saved_for_log['max_ht'] = torch.max(saved_for_loss[-1].data[:, 0:-1, :, :]).item()
+    saved_for_log['min_ht'] = torch.min(saved_for_loss[-1].data[:, 0:-1, :, :]).item()
     saved_for_log['max_paf'] = torch.max(saved_for_loss[-2].data).item()
     saved_for_log['min_paf'] = torch.min(saved_for_loss[-2].data).item()
 
@@ -213,7 +233,6 @@ def train(train_loader, model, optimizer, epoch):
         _,saved_for_loss = model(img)
         
         total_loss, saved_for_log = get_loss(saved_for_loss, heatmap_target, paf_target)
-        
         for name,_ in meter_dict.items():
             meter_dict[name].update(saved_for_log[name], img.size(0))
         losses.update(total_loss, img.size(0))
@@ -227,9 +246,13 @@ def train(train_loader, model, optimizer, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         if i % args.print_freq == 0:
+            
+            
             print_string = 'Epoch: [{0}][{1}/{2}]\t'.format(epoch, i, len(train_loader))
             print_string +='Data time {data_time.val:.3f} ({data_time.avg:.3f})\t'.format( data_time=data_time)
             print_string += 'Loss {loss.val:.4f} ({loss.avg:.4f})\n'.format(loss=losses)
+            print(losses.avg.item())
+            s = pd.DataFrame([[1.3, 9]], columns = ["Loss value", "Loss avg"])
 
             for i, (name, value) in enumerate(meter_dict.items()):
                 if i%2==1:
@@ -237,6 +260,11 @@ def train(train_loader, model, optimizer, epoch):
                 else:
                     print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\t'.format(name=name, loss=value)
             print(print_string)
+            csv_folder = os.path.join(cfg.RESULTS_PATH.VGG19, 'CSV_Logs')
+            if not os.path.exists(csv_folder):
+                os.makedirs(csv_folder)
+            csv_path = csv_folder + '/train_{name}.csv'.format(name = time_flag)
+            write_loss_csv(csv_path, losses, meter_dict)
     return losses.avg  
         
         
@@ -267,7 +295,8 @@ def validate(val_loader, model, epoch):
         _,saved_for_loss = model(img)
         
         total_loss, saved_for_log = get_loss(saved_for_loss, heatmap_target, paf_target)
-               
+        
+        
         #for name,_ in meter_dict.items():
         #    meter_dict[name].update(saved_for_log[name], img.size(0))
             
@@ -284,7 +313,11 @@ def validate(val_loader, model, epoch):
             for name, value in meter_dict.items():
                 print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\t'.format(name=name, loss=value)
             print(print_string)
-                
+            csv_folder = os.path.join(cfg.RESULTS_PATH.VGG19, 'CSV_Logs')
+            if not os.path.exists(csv_folder):
+                os.makedirs(csv_folder)
+            csv_path = csv_folder + '/val_{name}.csv'.format(name = time_flag)
+            write_loss_csv(csv_path, losses, meter_dict)
     return losses.avg
 
 class AverageMeter(object):
@@ -344,6 +377,19 @@ lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=5, 
 best_val_loss = np.inf
 
 
+checkpoints_folder = os.path.join(cfg.RESULTS_PATH.VGG19, 'checkpoints', datetime.now().strftime("%Y%m%d-%H%M%S"))
+if not os.path.exists(checkpoints_folder):
+    os.makedirs(checkpoints_folder)
+    
+def save_checkpoint(net, optimizer, num_iter, epochId):
+    snapshot_name = '{}/checkpoint_iter_{}.pth'.format(checkpoints_folder, num_iter)
+    torch.save({'state_dict': net.module.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                # 'scheduler': scheduler.state_dict(),
+                'iter': num_iter,
+                'current_epoch': epochId},
+                snapshot_name)
+
 model_save_filename = './network/weight/best_pose.pth'
 for epoch in range(5, args.epochs):
 
@@ -354,7 +400,7 @@ for epoch in range(5, args.epochs):
     val_loss = validate(val_loader, model, epoch)   
     
     lr_scheduler.step(val_loss)                        
-    
+    torch.save(model.state_dict(), '{}/checkpoint_epoch_{}.pth'.format(checkpoints_folder, epoch))    
     is_best = val_loss<best_val_loss
     best_val_loss = min(val_loss, best_val_loss)
     if is_best:

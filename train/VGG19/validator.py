@@ -13,7 +13,7 @@ cfg = update_config(cfg, './config/params.yaml')
 
 # writer = SummaryWriter(os.path.join(cfg.RESULTS_PATH.VGG19, 'logs'))       
 
-def validate(val_loader, model, epoch, iter):
+def validate(val_loader, model, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()

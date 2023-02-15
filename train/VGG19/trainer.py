@@ -1,6 +1,7 @@
 import argparse
 import time
 import torch
+from datetime import datetime
 # from torch.utils.tensorboard import SummaryWriter
 
 import os, sys
@@ -9,17 +10,29 @@ from utils import build_names, AverageMeter
 from loss import get_loss
 from lib.datasets import coco, transforms, datasets
 
+from modules.load_state import load_state, load_from_mobilenet
 from config import get_cfg_defaults, update_config
 from config.path_cfg import TRAIN_ANNO, VAL_ANNO, TRAIN_PATH, VAL_PATH
 cfg = get_cfg_defaults()
 cfg = update_config(cfg, './config/params.yaml')
-# writer = SummaryWriter(os.path.join(cfg.RESULTS_PATH.VGG19, 'logs'))       
 
 
 DATA_DIR = '/media/sparc/Data/nqthinh/COCO2017'
 
 ANNOTATIONS_TRAIN = [os.path.join(DATA_DIR, 'annotations', item) for item in ['person_keypoints_train2017.json']]
 
+checkpoints_folder = os.path.join(cfg.RESULTS_PATH.VGG19, 'checkpoints', datetime.now().strftime("%Y%m%d-%H%M%S"))
+if not os.path.exists(checkpoints_folder):
+    os.makedirs(checkpoints_folder)
+    
+def save_checkpoint(net, optimizer, num_iter, epochId):
+    snapshot_name = '{}/checkpoint_iter_{}.pth'.format(checkpoints_folder, num_iter)
+    torch.save({'state_dict': net.module.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                # 'scheduler': scheduler.state_dict(),
+                'iter': num_iter,
+                'current_epoch': epochId},
+                snapshot_name)
 
 
 def train_cli(parser):
@@ -120,7 +133,7 @@ def cli():
     return args
 
 
-def train(train_loader, model, optimizer, epoch, iter):
+def train(train_loader, model, optimizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -169,20 +182,17 @@ def train(train_loader, model, optimizer, epoch, iter):
             print_string = 'Epoch: [{0}][{1}/{2}]\t'.format(epoch, i, len(train_loader))
             print_string +='Data time {data_time.val:.3f} ({data_time.avg:.3f})\t'.format( data_time=data_time)
             print_string += 'Loss {loss.val:.4f} ({loss.avg:.4f})\n'.format(loss=losses)
-            # scalars = {}
             for j, (name, value) in enumerate(meter_dict.items()):
-                # scalars[f"{name}"] = value
                 
                 if j%2==1:
                     print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\n'.format(name=name, loss=value)
                 else:
                     print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\t'.format(name=name, loss=value)
-            iter = iter + 1
-            # writer.add_scalar("Loss Stage", scalars, iter+1)
+                    
             print(print_string)
-        
-        # if i % cfg.TRAINING.CHECKPOINT_FREQ ==0:
-            
+
+        if i % cfg.TRAINING.CHECKPOINT_FREQ == 0:
+            save_checkpoint(model, optimizer, i, epoch)
             
     return losses.avg  
         

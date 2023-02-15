@@ -52,13 +52,13 @@ optimizer = torch.optim.SGD(trainable_vars, lr=args.lr,
                            momentum=args.momentum,
                            weight_decay=args.weight_decay,
                            nesterov=args.nesterov)     
-                                                                                          
-# for epoch in range(5):
-#     # train for one epoch
-#     train_loss = train(train_loader, model, optimizer, epoch)
+                                                                   
+for epoch in range(5):
+    # train for one epoch
+    train_loss = train(train_loader, model, optimizer, epoch)
 
-#     # evaluate on validation set
-#     val_loss = validate(val_loader, model, epoch)  
+    # evaluate on validation set
+    val_loss = validate(val_loader, model, epoch)  
                                             
 # Release all weights                                   
 for param in model.module.parameters():
@@ -72,29 +72,33 @@ optimizer = torch.optim.SGD(trainable_vars, lr=args.lr,
                                                     
 lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=5, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=3, min_lr=0, eps=1e-08)
 
+
+
 best_val_loss = np.inf
 
 
 model_save_filename = './network/weight/best_pose.pth'
-iter = 0
+
 for epoch in range(0, args.epochs):
     
     # train for one epoch
     
-    train_loss = train(train_loader, model, optimizer, epoch, iter)
-
+    train_loss = train(train_loader, model, optimizer, epoch)
+     
     # evaluate on validation set
     val_loss = validate(val_loader, model, epoch, iter)   
     scalars = {"Train loss": train_loss,
                "Val loss": val_loss}
     writer.add_scalar("Loss", scalars, epoch)
-    lr_scheduler.step(val_loss)                        
+    lr_scheduler.step(val_loss)      
+                      
+    torch.save(model.state_dict(), model_save_filename)
     
     is_best = val_loss<best_val_loss
     best_val_loss = min(val_loss, best_val_loss)
     if is_best:
         torch.save(model.state_dict(), model_save_filename)  
-            
+    
 writer.flush()
 
 writer.close()

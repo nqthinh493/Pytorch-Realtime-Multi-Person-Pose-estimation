@@ -7,7 +7,7 @@
 
 COCO2017_DATASET:
   TRAIN_ANNOTATIONS : '/media/sparc/Data/nqthinh/COCO2017/annotations/person_keypoints_train2017.json'
-  VAL_ANNOTATIONS: '/media/sparc/Data/nqthinhCOCO2017/annotations/person_keypoints_val2017.json'
+  VAL_ANNOTATIONS: '/media/sparc/Data/nqthinh/COCO2017/annotations/person_keypoints_val2017.json'
   TEST : '/media/sparc/Data/nqthinh/COCO2017/test2017'
   TRAIN: '/media/sparc/Data/nqthinh/COCO2017/train2017'
   VAL: '/media/sparc/Data/nqthinh/COCO2017/val2017'
@@ -25,3 +25,5 @@ TRAINING:
   PRETRAINED_WEIGHT: './models/model_weights/mobilenet_sgd_68.848.pth.tar'
   TRANSFER_WEIGHT: None
 
+MODEL:
+  MODEL_TYPE: 'VGG19'
