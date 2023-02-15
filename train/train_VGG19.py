@@ -54,7 +54,7 @@ def train_cli(parser):
     group.add_argument('--weight-decay', '--wd', default=0.000, type=float,
                     metavar='W', help='weight decay (default: 1e-4)') 
     group.add_argument('--nesterov', dest='nesterov', default=True, type=bool)     
-    group.add_argument('--print_freq', default=20, type=int, metavar='N',
+    group.add_argument('--print_freq', default=50, type=int, metavar='N',
                     help='number of iterations to print the training statistics')    
                    
                                          
@@ -142,7 +142,7 @@ preprocess = transforms.Compose([
     ])
 train_loader, val_loader, train_data, val_data = train_factory(args, preprocess, target_transforms=None)
 
-def write_loss_csv(csv_path, loss, loss_states):
+def write_loss_csv(csv_path, total_loss, loss_states):
     if os.path.exists(csv_path):
         pass
     else:
@@ -150,7 +150,7 @@ def write_loss_csv(csv_path, loss, loss_states):
         
     df = pd.read_csv(csv_path)
     columns = ["Total Loss", "Loss avg"]
-    value = [loss.val.item(), loss.avg.item()]
+    value = total_loss
     for name, val in loss_states.items():
         columns.append(f"{name} value")
         columns.append(f"{name} avg")
@@ -251,9 +251,7 @@ def train(train_loader, model, optimizer, epoch):
             print_string = 'Epoch: [{0}][{1}/{2}]\t'.format(epoch, i, len(train_loader))
             print_string +='Data time {data_time.val:.3f} ({data_time.avg:.3f})\t'.format( data_time=data_time)
             print_string += 'Loss {loss.val:.4f} ({loss.avg:.4f})\n'.format(loss=losses)
-            print(losses.avg.item())
-            s = pd.DataFrame([[1.3, 9]], columns = ["Loss value", "Loss avg"])
-
+            
             for i, (name, value) in enumerate(meter_dict.items()):
                 if i%2==1:
                     print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\n'.format(name=name, loss=value)
@@ -264,7 +262,8 @@ def train(train_loader, model, optimizer, epoch):
             if not os.path.exists(csv_folder):
                 os.makedirs(csv_folder)
             csv_path = csv_folder + '/train_{name}.csv'.format(name = time_flag)
-            write_loss_csv(csv_path, losses, meter_dict)
+            total_loss = [losses.val.item(), losses.avg.item()]
+            write_loss_csv(csv_path, total_loss, meter_dict)
     return losses.avg  
         
         
@@ -309,7 +308,6 @@ def validate(val_loader, model, epoch):
             print_string = 'Epoch: [{0}][{1}/{2}]\t'.format(epoch, i, len(val_loader))
             print_string +='Data time {data_time.val:.3f} ({data_time.avg:.3f})\t'.format( data_time=data_time)
             print_string += 'Loss {loss.val:.4f} ({loss.avg:.4f})'.format(loss=losses)
-
             for name, value in meter_dict.items():
                 print_string+='{name}: {loss.val:.4f} ({loss.avg:.4f})\t'.format(name=name, loss=value)
             print(print_string)
@@ -317,7 +315,8 @@ def validate(val_loader, model, epoch):
             if not os.path.exists(csv_folder):
                 os.makedirs(csv_folder)
             csv_path = csv_folder + '/val_{name}.csv'.format(name = time_flag)
-            write_loss_csv(csv_path, losses, meter_dict)
+            total_loss = [losses.val, losses.avg]
+            write_loss_csv(csv_path, total_loss, meter_dict)
     return losses.avg
 
 class AverageMeter(object):
